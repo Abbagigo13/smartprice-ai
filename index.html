@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Smart Price Check — AI Appraisal Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="ledger-bg" aria-hidden="true"></div>
+
+  <header class="site-header">
+    <div class="eyebrow">
+      <span class="eyebrow-mark">◆</span>
+      APPRAISAL DESK No. 04&mdash;A
+    </div>
+    <div class="net-status">
+      <span class="dot" id="netDot"></span>
+      <span id="netLabel">connecting to studionet…</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1>What's it<br><em>really</em> worth?</h1>
+      <p class="lede">
+        Submit an item and an asking price. A panel of independent AI
+        validators appraises it against real resale value &mdash; and the
+        network only finalizes a verdict they agree on.
+      </p>
+    </section>
+
+    <section class="desk">
+      <div class="ticket" id="ticket">
+
+        <div class="ticket-head">
+          <span>SMART PRICE CHECK</span>
+          <span class="ticket-no" id="ticketNo">TICKET #000</span>
+        </div>
+
+        <form id="appraisalForm" class="ticket-form">
+          <label class="field">
+            <span class="field-label">Item</span>
+            <input
+              type="text"
+              id="productName"
+              name="productName"
+              placeholder="e.g. Samsung Galaxy S24"
+              autocomplete="off"
+              required
+            />
+          </label>
+
+          <label class="field">
+            <span class="field-label">Condition</span>
+            <select id="condition" name="condition" required>
+              <option value="" disabled selected>Select condition</option>
+              <option value="New">New</option>
+              <option value="Used">Used</option>
+              <option value="Refurbished">Refurbished</option>
+              <option value="For Parts">For Parts</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Asking price</span>
+            <div class="price-input">
+              <span class="currency">$</span>
+              <input
+                type="number"
+                id="sellerPrice"
+                name="sellerPrice"
+                placeholder="700"
+                min="0"
+                step="1"
+                required
+              />
+            </div>
+          </label>
+
+          <button type="submit" id="submitBtn" class="submit-btn">
+            <span class="btn-label">Submit for appraisal</span>
+            <span class="btn-arrow">→</span>
+          </button>
+        </form>
+
+        <div class="perforation" aria-hidden="true"></div>
+
+        <div class="result-zone" id="resultZone">
+          <p class="result-placeholder" id="resultPlaceholder">
+            Your appraisal will be stamped here once the validators reach consensus.
+          </p>
+
+          <div class="working" id="workingState" hidden>
+            <div class="working-spinner" aria-hidden="true"></div>
+            <p id="workingLabel">Validators are reviewing the item…</p>
+          </div>
+
+          <div class="stamped" id="stampedState" hidden>
+            <div class="stamp" id="stampEl">
+              <span id="stampText">FAIR PRICE</span>
+            </div>
+            <div class="result-details">
+              <div class="range-row">
+                <span class="range-label">Market range</span>
+                <span class="range-value" id="rangeValue">$0 – $0</span>
+              </div>
+              <p class="reason-text" id="reasonText"></p>
+            </div>
+          </div>
+
+          <div class="error-state" id="errorState" hidden>
+            <p id="errorText">Something went wrong. Try again.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <aside class="history" id="historyPanel">
+        <h2>Today's ledger</h2>
+        <p class="history-empty" id="historyEmpty">No appraisals yet this session.</p>
+        <ul class="history-list" id="historyList"></ul>
+      </aside>
+    </section>
+
+    <section class="how">
+      <div class="how-item">
+        <span class="how-index">On GenLayer</span>
+        <p>Every appraisal runs through multiple independent validators, each backed by its own LLM. They don't need identical wording — only equivalent conclusions.</p>
+      </div>
+      <div class="how-item">
+        <span class="how-index">Contract</span>
+        <p class="contract-address" id="contractAddress">0x69Efc7293F44DB9fdb7c0B3190AE46fB9Fe024a6</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    Built on GenLayer Intelligent Contracts — Studio network
+  </footer>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
