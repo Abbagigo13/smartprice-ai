@@ -68,7 +68,7 @@ function renderHistoryList(records) {
     const li = document.createElement("li");
     li.className = `history-item ${cls}`;
     li.innerHTML = `
-      <span class="h-name">${escapeHtml(item.product_name)}-$${item.seller_price}</span>
+      <span class="h-name">${escapeHtml(item.product_name)}—$${item.seller_price}</span>
       <span class="h-verdict">${escapeHtml(item.verdict || "—")}</span>
     `;
     historyList.appendChild(li);
@@ -95,8 +95,9 @@ async function refreshHistory() {
 
 // Poll get_latest until it actually reflects a ticket newer than what we
 // had before this submission, instead of trusting the very first read
-// right after the transaction is accepted (which can be stale).
-async function waitForNewResult(previousTicketCount, maxAttempts = 10, delayMs = 2000) {
+// right after the transaction is accepted (which can be stale). Consensus
+// can involve multiple leader rotations, so this window is generous.
+async function waitForNewResult(previousTicketCount, maxAttempts = 30, delayMs = 4000) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const latest = await client.readContract({
       address: CONTRACT_ADDRESS,
@@ -108,13 +109,9 @@ async function waitForNewResult(previousTicketCount, maxAttempts = 10, delayMs =
     }
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
-  // Fall back to whatever get_latest last returned, even if we couldn't
-  // confirm it's the newest — better than showing nothing.
-  return client.readContract({
-    address: CONTRACT_ADDRESS,
-    functionName: "get_latest",
-    args: [],
-  });
+  // Genuinely timed out — do NOT silently show stale data. Signal this
+  // clearly so the UI can tell the user rather than pretend it's accurate.
+  return null;
 }
 
 // ---- Init GenLayer client ----
@@ -184,7 +181,13 @@ form.addEventListener("submit", async (e) => {
 
     const latest = await waitForNewResult(previousTicketCount);
 
-    renderResult(latest);
+    if (latest === null) {
+      showOnly("error");
+      errorText.textContent =
+        "Your appraisal was accepted on-chain, but consensus is taking longer than usual to confirm. Refresh in a minute and check Today's Ledger — it will appear there once finalized.";
+    } else {
+      renderResult(latest);
+    }
     await refreshHistory();
   } catch (err) {
     console.error("Appraisal failed:", err);
