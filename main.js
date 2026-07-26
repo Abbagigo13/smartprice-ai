@@ -33,6 +33,7 @@ const historyList = document.getElementById("historyList");
 const historyEmpty = document.getElementById("historyEmpty");
 
 let client;
+let knownTicketCount = 0;
 
 // ---- Helpers ----
 function showOnly(section) {
@@ -85,10 +86,35 @@ async function refreshHistory() {
     renderHistoryList(records);
     if (records && records.length > 0) {
       ticketNo.textContent = `TICKET #${String(records[0].ticket_id).padStart(3, "0")}`;
+      knownTicketCount = records[0].ticket_id;
     }
   } catch (err) {
     console.error("Failed to load ledger from chain:", err);
   }
+}
+
+// Poll get_latest until it actually reflects a ticket newer than what we
+// had before this submission, instead of trusting the very first read
+// right after the transaction is accepted (which can be stale).
+async function waitForNewResult(previousTicketCount, maxAttempts = 10, delayMs = 2000) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const latest = await client.readContract({
+      address: CONTRACT_ADDRESS,
+      functionName: "get_latest",
+      args: [],
+    });
+    if (latest && latest.ticket_id && latest.ticket_id > previousTicketCount) {
+      return latest;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  // Fall back to whatever get_latest last returned, even if we couldn't
+  // confirm it's the newest — better than showing nothing.
+  return client.readContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "get_latest",
+    args: [],
+  });
 }
 
 // ---- Init GenLayer client ----
@@ -135,6 +161,8 @@ form.addEventListener("submit", async (e) => {
   showOnly("working");
   workingLabel.textContent = "Validators are reviewing the item…";
 
+  const previousTicketCount = knownTicketCount;
+
   try {
     const txHash = await client.writeContract({
       address: CONTRACT_ADDRESS,
@@ -154,11 +182,7 @@ form.addEventListener("submit", async (e) => {
 
     workingLabel.textContent = "Fetching verdict…";
 
-    const latest = await client.readContract({
-      address: CONTRACT_ADDRESS,
-      functionName: "get_latest",
-      args: [],
-    });
+    const latest = await waitForNewResult(previousTicketCount);
 
     renderResult(latest);
     await refreshHistory();
