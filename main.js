@@ -68,7 +68,7 @@ function renderHistoryList(records) {
     const li = document.createElement("li");
     li.className = `history-item ${cls}`;
     li.innerHTML = `
-      <span class="h-name">${escapeHtml(item.product_name)} — $${item.seller_price}</span>
+      <span class="h-name">${escapeHtml(item.product_name)}-$${item.seller_price}</span>
       <span class="h-verdict">${escapeHtml(item.verdict || "—")}</span>
     `;
     historyList.appendChild(li);
