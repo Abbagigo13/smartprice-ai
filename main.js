@@ -2,11 +2,12 @@ import { createClient, createAccount } from "https://esm.sh/genlayer-js@latest";
 import { studionet } from "https://esm.sh/genlayer-js@latest/chains";
 
 // ---- Configuration ----
-const CONTRACT_ADDRESS = "0x69Efc7293F44DB9fdb7c0B3190AE46fB9Fe024a6";
+const CONTRACT_ADDRESS = "0xACB2650f34832C47954B5972b0504cE8F0680b27";
 
 // ---- Elements ----
 const form = document.getElementById("appraisalForm");
 const productNameInput = document.getElementById("productName");
+const categoryInput = document.getElementById("category");
 const conditionInput = document.getElementById("condition");
 const sellerPriceInput = document.getElementById("sellerPrice");
 const submitBtn = document.getElementById("submitBtn");
@@ -31,47 +32,7 @@ const netLabel = document.getElementById("netLabel");
 const historyList = document.getElementById("historyList");
 const historyEmpty = document.getElementById("historyEmpty");
 
-let ticketCount = parseInt(localStorage.getItem("spc_ticketCount") || "0", 10);
 let client;
-
-function loadHistory() {
-  const saved = JSON.parse(localStorage.getItem("spc_history") || "[]");
-  if (saved.length > 0) {
-    historyEmpty.hidden = true;
-    saved.forEach((item) => {
-      const li = document.createElement("li");
-      li.className = `history-item ${item.cls}`;
-      li.innerHTML = `
-        <span class="h-name">${item.name} — $${item.price}</span>
-        <span class="h-verdict">${item.verdict}</span>
-      `;
-      historyList.appendChild(li);
-    });
-  }
-  ticketNo.textContent = `TICKET #${String(ticketCount).padStart(3, "0")}`;
-}
-
-loadHistory();
-
-// ---- Init GenLayer client ----
-async function initClient() {
-  try {
-    const account = createAccount();
-    client = createClient({
-      chain: studionet,
-      account: account,
-    });
-
-    netDot.classList.add("live");
-    netLabel.textContent = "connected to studionet";
-  } catch (err) {
-    console.error("Failed to initialize GenLayer client:", err);
-    netDot.classList.add("error");
-    netLabel.textContent = "connection failed";
-  }
-}
-
-initClient();
 
 // ---- Helpers ----
 function showOnly(section) {
@@ -94,36 +55,74 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function addHistoryItem(productName, sellerPrice, verdict) {
+function renderHistoryList(records) {
+  historyList.innerHTML = "";
+  if (!records || records.length === 0) {
+    historyEmpty.hidden = false;
+    return;
+  }
   historyEmpty.hidden = true;
-  const cls = verdictClass(verdict);
-  const li = document.createElement("li");
-  li.className = `history-item ${cls}`;
-  li.innerHTML = `
-    <span class="h-name">${escapeHtml(productName)} — $${sellerPrice}</span>
-    <span class="h-verdict">${escapeHtml(verdict || "—")}</span>
-  `;
-  historyList.prepend(li);
-
-  const saved = JSON.parse(localStorage.getItem("spc_history") || "[]");
-  saved.unshift({
-    name: escapeHtml(productName),
-    price: sellerPrice,
-    verdict: escapeHtml(verdict || "—"),
-    cls: cls,
+  records.forEach((item) => {
+    const cls = verdictClass(item.verdict);
+    const li = document.createElement("li");
+    li.className = `history-item ${cls}`;
+    li.innerHTML = `
+      <span class="h-name">${escapeHtml(item.product_name)} — $${item.seller_price}</span>
+      <span class="h-verdict">${escapeHtml(item.verdict || "—")}</span>
+    `;
+    historyList.appendChild(li);
   });
-  localStorage.setItem("spc_history", JSON.stringify(saved.slice(0, 20)));
 }
+
+// ---- Ledger reads (on-chain, not localStorage) ----
+async function refreshHistory() {
+  try {
+    const records = await client.readContract({
+      address: CONTRACT_ADDRESS,
+      functionName: "get_history",
+      args: [20],
+    });
+    renderHistoryList(records);
+    if (records && records.length > 0) {
+      ticketNo.textContent = `TICKET #${String(records[0].ticket_id).padStart(3, "0")}`;
+    }
+  } catch (err) {
+    console.error("Failed to load ledger from chain:", err);
+  }
+}
+
+// ---- Init GenLayer client ----
+async function initClient() {
+  try {
+    const account = createAccount();
+    client = createClient({
+      chain: studionet,
+      account: account,
+    });
+
+    netDot.classList.add("live");
+    netLabel.textContent = "connected to studionet";
+
+    await refreshHistory();
+  } catch (err) {
+    console.error("Failed to initialize GenLayer client:", err);
+    netDot.classList.add("error");
+    netLabel.textContent = "connection failed";
+  }
+}
+
+initClient();
 
 // ---- Form submit ----
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const productName = productNameInput.value.trim();
+  const category = categoryInput.value;
   const condition = conditionInput.value;
   const sellerPrice = parseInt(sellerPriceInput.value, 10);
 
-  if (!productName || !condition || Number.isNaN(sellerPrice)) return;
+  if (!productName || !category || !condition || Number.isNaN(sellerPrice)) return;
 
   if (!client) {
     showOnly("error");
@@ -140,7 +139,7 @@ form.addEventListener("submit", async (e) => {
     const txHash = await client.writeContract({
       address: CONTRACT_ADDRESS,
       functionName: "check_price",
-      args: [productName, condition, sellerPrice],
+      args: [productName, category, condition, sellerPrice],
       value: 0,
     });
 
@@ -155,17 +154,14 @@ form.addEventListener("submit", async (e) => {
 
     workingLabel.textContent = "Fetching verdict…";
 
-    const result = await client.readContract({
+    const latest = await client.readContract({
       address: CONTRACT_ADDRESS,
-      functionName: "get_result",
+      functionName: "get_latest",
       args: [],
     });
 
-    renderResult(result);
-    addHistoryItem(productName, sellerPrice, result.verdict);
-    ticketCount += 1;
-    localStorage.setItem("spc_ticketCount", String(ticketCount));
-    ticketNo.textContent = `TICKET #${String(ticketCount).padStart(3, "0")}`;
+    renderResult(latest);
+    await refreshHistory();
   } catch (err) {
     console.error("Appraisal failed:", err);
     showOnly("error");
