@@ -10,19 +10,19 @@ class PriceRecord:
     product_name: str
     category: str
     condition: str
-    seller_price: bigint
-    market_low: bigint
-    market_high: bigint
+    seller_price: u256
+    market_low: u256
+    market_high: u256
     verdict: str
     reason: str
 
 
 class SmartPriceCheck(gl.Contract):
-    next_id: bigint
-    history: TreeMap[bigint, PriceRecord]
+    next_id: u256
+    history: TreeMap[u256, PriceRecord]
 
     def __init__(self):
-        self.next_id = bigint(1)
+        self.next_id = u256(1)
 
     @gl.public.write
     def check_price(
@@ -67,27 +67,31 @@ Respond ONLY with JSON in this exact format:
             product_name,
             category,
             condition,
-            bigint(seller_price),
-            bigint(int(data["market_low"])),
-            bigint(int(data["market_high"])),
+            u256(seller_price),
+            u256(int(data["market_low"])),
+            u256(int(data["market_high"])),
             data["verdict"],
             data["reason"],
         )
-        self.next_id = ticket_id + bigint(1)
+        self.next_id = ticket_id + u256(1)
 
+        # Returns the exact ticket ID this specific call created. The
+        # frontend should read this value directly from the transaction
+        # receipt and use it to fetch the exact record via get_result,
+        # rather than assuming "the newest ticket" belongs to this call.
         return int(ticket_id)
 
     @gl.public.view
     def get_result(self, ticket_id: int) -> dict:
-        key = bigint(ticket_id)
+        key = u256(ticket_id)
         if key not in self.history:
             return {}
         return self._record_to_dict(self.history[key], ticket_id)
 
     @gl.public.view
     def get_latest(self) -> dict:
-        latest_id = self.next_id - bigint(1)
-        if latest_id < bigint(1):
+        latest_id = self.next_id - u256(1)
+        if latest_id < u256(1):
             return {}
         return self._record_to_dict(self.history[latest_id], int(latest_id))
 

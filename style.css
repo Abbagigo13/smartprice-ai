@@ -52,6 +52,13 @@ html, body {
     var(--ink);
 }
 
+.bg-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
 .site-header {
   display: flex;
   justify-content: space-between;

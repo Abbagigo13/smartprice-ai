@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Smart Price Check — AI Appraisal Desk</title>
+<title>Smart Price Check-AI Appraisal Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -12,6 +12,7 @@
 <body>
 
   <div class="ledger-bg" aria-hidden="true"></div>
+  <canvas id="bgCanvas" class="bg-canvas" aria-hidden="true"></canvas>
 
   <header class="site-header">
     <div class="eyebrow">
@@ -149,7 +150,7 @@
       </div>
       <div class="how-item">
         <span class="how-index">Contract</span>
-        <p class="contract-address" id="contractAddress">0xACB2650f34832C47954B5972b0504cE8F0680b27</p>
+        <p class="contract-address" id="contractAddress">0x713D538A4bCc0D30cF5AD2464a146E937164B8D5</p>
       </div>
     </section>
   </main>
@@ -159,5 +160,6 @@
   </footer>
 
   <script type="module" src="main.js"></script>
+  <script type="module" src="bg-animation.js"></script>
 </body>
 </html>

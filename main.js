@@ -2,7 +2,7 @@ import { createClient, createAccount } from "https://esm.sh/genlayer-js@latest";
 import { studionet } from "https://esm.sh/genlayer-js@latest/chains";
 
 // ---- Configuration ----
-const CONTRACT_ADDRESS = "0xACB2650f34832C47954B5972b0504cE8F0680b27";
+const CONTRACT_ADDRESS = "0x713D538A4bCc0D30cF5AD2464a146E937164B8D5";
 
 // ---- Elements ----
 const form = document.getElementById("appraisalForm");
@@ -33,7 +33,6 @@ const historyList = document.getElementById("historyList");
 const historyEmpty = document.getElementById("historyEmpty");
 
 let client;
-let knownTicketCount = 0;
 
 // ---- Helpers ----
 function showOnly(section) {
@@ -68,7 +67,7 @@ function renderHistoryList(records) {
     const li = document.createElement("li");
     li.className = `history-item ${cls}`;
     li.innerHTML = `
-      <span class="h-name">${escapeHtml(item.product_name)} — $${item.seller_price}</span>
+      <span class="h-name">${escapeHtml(item.product_name)} - $${item.seller_price}</span>
       <span class="h-verdict">${escapeHtml(item.verdict || "—")}</span>
     `;
     historyList.appendChild(li);
@@ -86,35 +85,36 @@ async function refreshHistory() {
     renderHistoryList(records);
     if (records && records.length > 0) {
       ticketNo.textContent = `TICKET #${String(records[0].ticket_id).padStart(3, "0")}`;
-      knownTicketCount = records[0].ticket_id;
     }
   } catch (err) {
     console.error("Failed to load ledger from chain:", err);
   }
 }
 
-// Poll get_latest until it actually reflects a ticket newer than what we
-// had before this submission, instead of trusting the very first read
-// right after the transaction is accepted (which can be stale).
-async function waitForNewResult(previousTicketCount, maxAttempts = 10, delayMs = 2000) {
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const latest = await client.readContract({
-      address: CONTRACT_ADDRESS,
-      functionName: "get_latest",
-      args: [],
-    });
-    if (latest && latest.ticket_id && latest.ticket_id > previousTicketCount) {
-      return latest;
+// Extracts the decoded return value (the ticket_id) from a transaction
+// receipt. GenLayer's simplified receipt keeps execution results, but the
+// exact field name has varied across SDK versions/examples in the docs,
+// so we check the known possibilities defensively and log the raw
+// receipt if none match, rather than silently guessing wrong.
+function extractTicketIdFromReceipt(receipt) {
+  const candidates = [
+    receipt?.result,
+    receipt?.output,
+    receipt?.data?.result,
+    receipt?.data?.output,
+    receipt?.data?.execution_result,
+  ];
+  for (const candidate of candidates) {
+    if (candidate !== undefined && candidate !== null) {
+      const asNumber = Number(candidate);
+      if (!Number.isNaN(asNumber)) return asNumber;
     }
-    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
-  // Fall back to whatever get_latest last returned, even if we couldn't
-  // confirm it's the newest — better than showing nothing.
-  return client.readContract({
-    address: CONTRACT_ADDRESS,
-    functionName: "get_latest",
-    args: [],
-  });
+  console.warn(
+    "Could not find decoded ticket_id on receipt in any known field. Raw receipt:",
+    receipt
+  );
+  return null;
 }
 
 // ---- Init GenLayer client ----
@@ -161,8 +161,6 @@ form.addEventListener("submit", async (e) => {
   showOnly("working");
   workingLabel.textContent = "Validators are reviewing the item…";
 
-  const previousTicketCount = knownTicketCount;
-
   try {
     const txHash = await client.writeContract({
       address: CONTRACT_ADDRESS,
@@ -173,18 +171,30 @@ form.addEventListener("submit", async (e) => {
 
     workingLabel.textContent = "Waiting for validator consensus… (this can take a minute)";
 
-    await client.waitForTransactionReceipt({
+    const receipt = await client.waitForTransactionReceipt({
       hash: txHash,
       status: "ACCEPTED",
       retries: 100,
       interval: 5000,
+      fullTransaction: true,
     });
 
     workingLabel.textContent = "Fetching verdict…";
 
-    const latest = await waitForNewResult(previousTicketCount);
+    const ticketId = extractTicketIdFromReceipt(receipt);
 
-    renderResult(latest);
+    if (ticketId === null) {
+      showOnly("error");
+      errorText.textContent =
+        "Your appraisal was accepted on-chain, but the app couldn't read back its ticket number. Check Today's Ledger-the newest entry there is your result.";
+    } else {
+      const result = await client.readContract({
+        address: CONTRACT_ADDRESS,
+        functionName: "get_result",
+        args: [ticketId],
+      });
+      renderResult(result);
+    }
     await refreshHistory();
   } catch (err) {
     console.error("Appraisal failed:", err);
