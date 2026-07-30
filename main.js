@@ -117,7 +117,23 @@ function extractTicketIdFromReceipt(receipt) {
   return null;
 }
 
-// ---- Init GenLayer client ----
+// Fetches a specific ticket's record, retrying briefly in case the read
+// layer hasn't caught up yet right after the transaction was accepted.
+// Never silently returns an empty/fake result — either real data or null.
+async function fetchResultWithRetry(ticketId, maxAttempts = 8, delayMs = 3000) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const result = await client.readContract({
+      address: CONTRACT_ADDRESS,
+      functionName: "get_result",
+      args: [ticketId],
+    });
+    if (result && result.verdict) {
+      return result;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return null;
+}
 async function initClient() {
   try {
     const account = createAccount();
@@ -186,14 +202,22 @@ form.addEventListener("submit", async (e) => {
     if (ticketId === null) {
       showOnly("error");
       errorText.textContent =
-        "Your appraisal was accepted on-chain, but the app couldn't read back its ticket number. Check Today's Ledger-the newest entry there is your result.";
+        "Your appraisal was accepted on-chain, but the app couldn't read back its ticket number. Check Today's Ledger — the newest entry there is your result.";
     } else {
-      const result = await client.readContract({
-        address: CONTRACT_ADDRESS,
-        functionName: "get_result",
-        args: [ticketId],
-      });
-      renderResult(result);
+      // Fetch this EXACT ticket's record — never assume "the newest
+      // ticket" belongs to this submission, since another user's
+      // appraisal could land in between. Retries briefly since the
+      // read layer can lag slightly behind "ACCEPTED" status.
+      const result = await fetchResultWithRetry(ticketId);
+      if (result === null) {
+        showOnly("error");
+        errorText.textContent =
+          "Your appraisal was accepted on-chain (ticket #" +
+          ticketId +
+          "), but it's not queryable yet. Refresh in a minute and check Today's Ledger.";
+      } else {
+        renderResult(result);
+      }
     }
     await refreshHistory();
   } catch (err) {
