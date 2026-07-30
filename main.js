@@ -120,7 +120,7 @@ function extractTicketIdFromReceipt(receipt) {
 // Fetches a specific ticket's record, retrying briefly in case the read
 // layer hasn't caught up yet right after the transaction was accepted.
 // Never silently returns an empty/fake result — either real data or null.
-async function fetchResultWithRetry(ticketId, maxAttempts = 8, delayMs = 3000) {
+async function fetchResultWithRetry(ticketId, maxAttempts = 20, delayMs = 4000) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const result = await client.readContract({
       address: CONTRACT_ADDRESS,
