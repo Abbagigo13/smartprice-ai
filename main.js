@@ -117,19 +117,50 @@ function extractTicketIdFromReceipt(receipt) {
   return null;
 }
 
-// Fetches a specific ticket's record, retrying briefly in case the read
-// layer hasn't caught up yet right after the transaction was accepted.
-// Never silently returns an empty/fake result — either real data or null.
-async function fetchResultWithRetry(ticketId, maxAttempts = 20, delayMs = 4000) {
+// Checks that a fetched record's fields actually match what THIS
+// submission sent — not just "some record exists at this ticket ID".
+// This is the real safety net: extracting the ticket ID from a receipt
+// has proven unreliable (the exact SDK field varies), so we never trust
+// an ID alone. A record is only ever shown if its content genuinely
+// matches what the person submitted.
+function recordMatchesSubmission(record, submission) {
+  if (!record || !record.verdict) return false;
+  return (
+    record.product_name === submission.productName &&
+    record.category === submission.category &&
+    record.condition === submission.condition &&
+    Number(record.seller_price) === submission.sellerPrice
+  );
+}
+
+// The authoritative fetch: tries the (possibly wrong) extracted ticket ID
+// first as a fast path, but always verifies the content matches before
+// accepting it. If it doesn't match — or the ID extraction failed
+// entirely — falls back to scanning recent history for the real match.
+// Only gives up (returns null) after genuinely exhausting retries.
+async function fetchVerifiedResult(ticketId, submission, maxAttempts = 20, delayMs = 4000) {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const result = await client.readContract({
-      address: CONTRACT_ADDRESS,
-      functionName: "get_result",
-      args: [ticketId],
-    });
-    if (result && result.verdict) {
-      return result;
+    if (ticketId !== null) {
+      const candidate = await client.readContract({
+        address: CONTRACT_ADDRESS,
+        functionName: "get_result",
+        args: [ticketId],
+      });
+      if (recordMatchesSubmission(candidate, submission)) {
+        return candidate;
+      }
     }
+
+    const history = await client.readContract({
+      address: CONTRACT_ADDRESS,
+      functionName: "get_history",
+      args: [20],
+    });
+    const match = (history || []).find((record) =>
+      recordMatchesSubmission(record, submission)
+    );
+    if (match) return match;
+
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
   return null;
@@ -199,25 +230,22 @@ form.addEventListener("submit", async (e) => {
 
     const ticketId = extractTicketIdFromReceipt(receipt);
 
-    if (ticketId === null) {
+    // Content-verified fetch: even if ticketId is null or wrong, this
+    // will find the real matching record (or honestly report it can't
+    // yet), rather than ever displaying someone else's result.
+    const result = await fetchVerifiedResult(ticketId, {
+      productName,
+      category,
+      condition,
+      sellerPrice,
+    });
+
+    if (result === null) {
       showOnly("error");
       errorText.textContent =
-        "Your appraisal was accepted on-chain, but the app couldn't read back its ticket number. Check Today's Ledger — the newest entry there is your result.";
+        "Your appraisal was accepted on-chain, but the app couldn't confirm the matching result yet. Refresh in a minute and check Today's Ledger — it will be there once finalized.";
     } else {
-      // Fetch this EXACT ticket's record — never assume "the newest
-      // ticket" belongs to this submission, since another user's
-      // appraisal could land in between. Retries briefly since the
-      // read layer can lag slightly behind "ACCEPTED" status.
-      const result = await fetchResultWithRetry(ticketId);
-      if (result === null) {
-        showOnly("error");
-        errorText.textContent =
-          "Your appraisal was accepted on-chain (ticket #" +
-          ticketId +
-          "), but it's not queryable yet. Refresh in a minute and check Today's Ledger.";
-      } else {
-        renderResult(result);
-      }
+      renderResult(result);
     }
     await refreshHistory();
   } catch (err) {
