@@ -32,7 +32,37 @@ class SmartPriceCheck(gl.Contract):
         condition: str,
         seller_price: int,
     ) -> int:
-        prompt = f"""
+        title_query = product_name.replace(" ", "%20")
+        wiki_url = (
+            "https://en.wikipedia.org/w/api.php?action=query&generator=search"
+            "&gsrsearch=" + title_query
+            + "&gsrlimit=1&prop=extracts&exintro=true&explaintext=true&format=json"
+        )
+
+        def get_estimate():
+            # Ground the appraisal in real external reference data (via
+            # Wikipedia's official API — reliable and not blocked, unlike
+            # scraping marketplace/search sites) instead of relying only
+            # on the model's own trained memory of typical prices.
+            try:
+                response = gl.nondet.web.request(wiki_url, method="GET")
+                body = json.loads(response.body.decode("utf-8", errors="ignore"))
+                pages = body.get("query", {}).get("pages", {})
+                extract = ""
+                for page in pages.values():
+                    extract = page.get("extract", "") or ""
+                    break
+                if not extract:
+                    context = (
+                        "(No Wikipedia entry found for this product — no "
+                        "external reference data available for this item.)"
+                    )
+                else:
+                    context = extract[:1500]
+            except Exception as exc:
+                context = f"(External reference lookup failed: {type(exc).__name__})"
+
+            prompt = f"""
 You are an expert in resale/secondhand pricing across many categories of goods
 (electronics, furniture, vehicles, collectibles, appliances, tools, and more).
 
@@ -41,15 +71,22 @@ Product: {product_name}
 Condition: {condition}
 Seller's asking price: ${seller_price}
 
-Estimate the typical market price range for this item in its stated category
-and condition, then decide if the seller's price is "Fair Price", "Overpriced",
-or "Underpriced".
+Reference information about this product (from Wikipedia, if available):
+\"\"\"
+{context}
+\"\"\"
+
+Use this reference information — if present — to ground facts like release
+date, original retail price, or notable specs. Combine that with your
+knowledge of typical depreciation and secondhand market behavior to
+estimate the current market price range for a {condition} unit, then
+decide if the seller's price is "Fair Price", "Overpriced", or
+"Underpriced". If no reference data was available, say so explicitly in
+your reasoning and rely on your best general knowledge instead.
 
 Respond ONLY with JSON in this exact format:
 {{"market_low": <integer>, "market_high": <integer>, "verdict": "Fair Price" | "Overpriced" | "Underpriced", "reason": "<one sentence explanation>"}}
 """
-
-        def get_estimate():
             result = gl.nondet.exec_prompt(prompt, response_format="json")
             return json.dumps(result, sort_keys=True)
 
