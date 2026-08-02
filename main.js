@@ -33,6 +33,23 @@ const netLabel = document.getElementById("netLabel");
 const historyList = document.getElementById("historyList");
 const historyEmpty = document.getElementById("historyEmpty");
 
+const copyLinkBtn = document.getElementById("copyLinkBtn");
+const copyLinkLabel = document.getElementById("copyLinkLabel");
+
+const heroSection = document.getElementById("heroSection");
+const deskSection = document.getElementById("deskSection");
+const certificateView = document.getElementById("certificateView");
+const certTicketNo = document.getElementById("certTicketNo");
+const certItemName = document.getElementById("certItemName");
+const certMeta = document.getElementById("certMeta");
+const certStampEl = document.getElementById("certStampEl");
+const certStampText = document.getElementById("certStampText");
+const certRange = document.getElementById("certRange");
+const certReason = document.getElementById("certReason");
+const certContractAddress = document.getElementById("certContractAddress");
+
+let currentTicketId = null;
+
 let client;
 
 // ---- Helpers ----
@@ -192,12 +209,54 @@ async function initClient() {
     netDot.classList.add("live");
     netLabel.textContent = "connected to studionet";
 
-    await refreshHistory();
+    const ticketParam = new URLSearchParams(window.location.search).get("ticket");
+    if (ticketParam) {
+      await showCertificate(parseInt(ticketParam, 10));
+    } else {
+      await refreshHistory();
+    }
   } catch (err) {
     console.error("Failed to initialize GenLayer client:", err);
     netDot.classList.add("error");
     netLabel.textContent = "connection failed";
   }
+}
+
+// Renders a read-only, shareable certificate view for a specific ticket,
+// hiding the submission form entirely. Used when the page is loaded with
+// a ?ticket=N URL param — e.g. a link someone shares as proof of an
+// appraisal.
+async function showCertificate(ticketId) {
+  heroSection.hidden = true;
+  deskSection.hidden = true;
+
+  const record = await client.readContract({
+    address: CONTRACT_ADDRESS,
+    functionName: "get_result",
+    args: [ticketId],
+  });
+
+  if (!record || !record.verdict) {
+    certItemName.textContent = "Ticket not found";
+    certMeta.textContent = `No appraisal exists for ticket #${ticketId} on this contract.`;
+    certificateView.hidden = false;
+    return;
+  }
+
+  certTicketNo.textContent = `TICKET #${String(record.ticket_id).padStart(3, "0")}`;
+  certItemName.textContent = record.product_name;
+  certMeta.textContent = `${record.category} · ${record.condition} · Asking $${record.seller_price}`;
+
+  const cls = verdictClass(record.verdict);
+  certStampEl.classList.remove("verdict-fair", "verdict-over", "verdict-under");
+  certStampEl.classList.add(cls);
+  certStampText.textContent = (record.verdict || "").toUpperCase();
+
+  certRange.textContent = `$${record.market_low} – $${record.market_high}`;
+  certReason.textContent = record.reason || "";
+  certContractAddress.textContent = `Contract: ${CONTRACT_ADDRESS}`;
+
+  certificateView.hidden = false;
 }
 
 initClient();
@@ -224,6 +283,18 @@ form.addEventListener("submit", async (e) => {
   showOnly("working");
   workingLabel.textContent = "Validators are reviewing the item…";
 
+  const submission = { productName, category, condition, sellerPrice };
+  await submitAppraisal(submission, true);
+});
+
+function isServerBusyError(err) {
+  const msg = String(err?.message || err?.details || err || "");
+  return msg.includes("Server busy") || msg.includes("execution slots occupied");
+}
+
+async function submitAppraisal(submission, allowRetry) {
+  const { productName, category, condition, sellerPrice } = submission;
+
   try {
     const txHash = await client.writeContract({
       address: CONTRACT_ADDRESS,
@@ -249,12 +320,7 @@ form.addEventListener("submit", async (e) => {
     // Content-verified fetch: even if ticketId is null or wrong, this
     // will find the real matching record (or honestly report it can't
     // yet), rather than ever displaying someone else's result.
-    const result = await fetchVerifiedResult(ticketId, {
-      productName,
-      category,
-      condition,
-      sellerPrice,
-    });
+    const result = await fetchVerifiedResult(ticketId, submission);
 
     if (result === null) {
       showOnly("error");
@@ -266,14 +332,32 @@ form.addEventListener("submit", async (e) => {
     await refreshHistory();
   } catch (err) {
     console.error("Appraisal failed:", err);
+
+    if (isServerBusyError(err) && allowRetry) {
+      // GenLayer Studionet has a limited number of execution slots shared
+      // across everyone using the testnet. A "busy" response is common
+      // and transient — worth one automatic retry after a short wait
+      // instead of immediately reporting it as broken.
+      workingLabel.textContent =
+        "Studionet is busy right now — retrying in 15 seconds…";
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+      await submitAppraisal(submission, false);
+      return;
+    }
+
     showOnly("error");
-    errorText.textContent =
-      "The appraisal couldn't be completed. Check the console for details, and make sure your contract is still deployed on studionet.";
+    if (isServerBusyError(err)) {
+      errorText.textContent =
+        "GenLayer Studionet is currently busy (all execution slots occupied). This is a shared testnet limit, not a problem with your submission — please wait a minute and try again.";
+    } else {
+      errorText.textContent =
+        "The appraisal couldn't be completed. Check the console for details, and make sure your contract is still deployed on studionet.";
+    }
   } finally {
     submitBtn.disabled = false;
     btnLabel.textContent = "Submit for appraisal";
   }
-});
+}
 
 function renderResult(result) {
   const verdict = result.verdict || "Fair Price";
@@ -291,5 +375,22 @@ function renderResult(result) {
   animateCountUp(rangeHigh, 0, Number(result.market_high), "$");
   reasonText.textContent = result.reason || "";
 
+  currentTicketId = result.ticket_id;
+
   showOnly("stamped");
 }
+
+copyLinkBtn.addEventListener("click", async () => {
+  if (currentTicketId === null) return;
+  const url = `${window.location.origin}${window.location.pathname}?ticket=${currentTicketId}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    copyLinkLabel.textContent = "Link copied!";
+  } catch (err) {
+    console.error("Clipboard write failed:", err);
+    copyLinkLabel.textContent = url;
+  }
+  setTimeout(() => {
+    copyLinkLabel.textContent = "Copy shareable certificate link";
+  }, 2500);
+});
