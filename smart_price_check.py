@@ -38,12 +38,12 @@ class SmartPriceCheck(gl.Contract):
             "&gsrsearch=" + title_query
             + "&gsrlimit=1&prop=extracts&exintro=true&explaintext=true&format=json"
         )
+        bls_url = "https://api.bls.gov/publicAPI/v1/timeseries/data/CUUR0000SA0"
 
         def get_estimate():
-            # Ground the appraisal in real external reference data (via
-            # Wikipedia's official API — reliable and not blocked, unlike
-            # scraping marketplace/search sites) instead of relying only
-            # on the model's own trained memory of typical prices.
+            # First external source: Wikipedia, for real product facts
+            # (release date, original specs) instead of relying only on
+            # the model's own trained memory of typical prices.
             try:
                 response = gl.nondet.web.request(wiki_url, method="GET")
                 body = json.loads(response.body.decode("utf-8", errors="ignore"))
@@ -53,14 +53,35 @@ class SmartPriceCheck(gl.Contract):
                     extract = page.get("extract", "") or ""
                     break
                 if not extract:
-                    context = (
+                    wiki_context = (
                         "(No Wikipedia entry found for this product — no "
                         "external reference data available for this item.)"
                     )
                 else:
-                    context = extract[:1500]
+                    wiki_context = extract[:1500]
             except Exception as exc:
-                context = f"(External reference lookup failed: {type(exc).__name__})"
+                wiki_context = f"(Wikipedia lookup failed: {type(exc).__name__})"
+
+            # Second, independent external source: real U.S. CPI (inflation)
+            # data from the Bureau of Labor Statistics. This is a genuinely
+            # different kind of signal (a real economic index, not text) —
+            # cross-referencing two independent sources rather than trusting
+            # a single one, and grounding any inflation/depreciation
+            # reasoning in a real published number instead of a guess.
+            try:
+                bls_response = gl.nondet.web.request(bls_url, method="GET")
+                bls_body = json.loads(
+                    bls_response.body.decode("utf-8", errors="ignore")
+                )
+                series_data = bls_body["Results"]["series"][0]["data"]
+                latest = series_data[0]
+                cpi_context = (
+                    f"Current U.S. CPI-U (all items, cost-of-living index): "
+                    f"{latest['value']} as of {latest['periodName']} "
+                    f"{latest['year']}."
+                )
+            except Exception as exc:
+                cpi_context = f"(BLS CPI lookup failed: {type(exc).__name__})"
 
             prompt = f"""
 You are an expert in resale/secondhand pricing across many categories of goods
@@ -73,15 +94,23 @@ Seller's asking price: ${seller_price}
 
 Reference information about this product (from Wikipedia, if available):
 \"\"\"
-{context}
+{wiki_context}
 \"\"\"
 
-Use this reference information — if present — to ground facts like release
-date, original retail price, or notable specs. Combine that with your
-knowledge of typical depreciation and secondhand market behavior to
-estimate the current market price range for a {condition} unit, then
-decide if the seller's price is "Fair Price", "Overpriced", or
-"Underpriced". If no reference data was available, say so explicitly in
+Independent economic reference data (from the U.S. Bureau of Labor
+Statistics), useful for reasoning about inflation if this product's
+original release-era price is known:
+\"\"\"
+{cpi_context}
+\"\"\"
+
+Use the Wikipedia reference — if present — to ground facts like release
+date, original retail price, or notable specs. Use the CPI data to reason
+about how prices have shifted since release, if relevant. Combine both
+with your knowledge of typical depreciation and secondhand market
+behavior to estimate the current market price range for a {condition}
+unit, then decide if the seller's price is "Fair Price", "Overpriced", or
+"Underpriced". If reference data was unavailable, say so explicitly in
 your reasoning and rely on your best general knowledge instead.
 
 Respond ONLY with JSON in this exact format:
