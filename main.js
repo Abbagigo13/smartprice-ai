@@ -2,7 +2,7 @@ import { createClient, createAccount } from "https://esm.sh/genlayer-js@latest";
 import { studionet } from "https://esm.sh/genlayer-js@latest/chains";
 
 // ---- Configuration ----
-const CONTRACT_ADDRESS = "0xE9a49f79bd42842Ae45aF873dF357Af31630B1a0";
+const CONTRACT_ADDRESS = "0x87eE19C1D3a0B148E4D197Ed5a3B01163ff96609";
 
 // ---- Elements ----
 const form = document.getElementById("appraisalForm");
@@ -22,7 +22,8 @@ const errorText = document.getElementById("errorText");
 
 const stampEl = document.getElementById("stampEl");
 const stampText = document.getElementById("stampText");
-const rangeValue = document.getElementById("rangeValue");
+const rangeLow = document.getElementById("rangeLow");
+const rangeHigh = document.getElementById("rangeHigh");
 const reasonText = document.getElementById("reasonText");
 
 const ticketNo = document.getElementById("ticketNo");
@@ -47,6 +48,20 @@ function verdictClass(verdict) {
   if (v.includes("over")) return "verdict-over";
   if (v.includes("under")) return "verdict-under";
   return "verdict-fair";
+}
+
+// Animates a number counting up from 0 to its target value, giving the
+// stamped result a bit more polish instead of just appearing instantly.
+function animateCountUp(el, from, to, prefix = "$", durationMs = 700) {
+  const start = performance.now();
+  function step(now) {
+    const progress = Math.min((now - start) / durationMs, 1);
+    const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+    const value = Math.round(from + (to - from) * eased);
+    el.textContent = `${prefix}${value.toLocaleString()}`;
+    if (progress < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 
 function escapeHtml(str) {
@@ -244,7 +259,7 @@ form.addEventListener("submit", async (e) => {
     if (result === null) {
       showOnly("error");
       errorText.textContent =
-        "Your appraisal was accepted on-chain, but the app couldn't confirm the matching result yet. Refresh in a minute and check Today's Ledger-it will be there once finalized.";
+        "Your appraisal was accepted on-chain, but the app couldn't confirm the matching result yet. Refresh in a minute and check Today's Ledger — it will be there once finalized.";
     } else {
       renderResult(result);
     }
@@ -272,7 +287,8 @@ function renderResult(result) {
   void stampEl.offsetWidth;
   stampEl.style.animation = "";
 
-  rangeValue.textContent = `$${result.market_low} – $${result.market_high}`;
+  animateCountUp(rangeLow, 0, Number(result.market_low), "$");
+  animateCountUp(rangeHigh, 0, Number(result.market_high), "$");
   reasonText.textContent = result.reason || "";
 
   showOnly("stamped");
