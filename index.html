@@ -26,7 +26,7 @@
   </header>
 
   <main>
-    <section class="hero">
+    <section class="hero" id="heroSection">
       <h1>What's it<br><em>really</em> worth?</h1>
       <p class="lede">
         Submit an item and an asking price. A panel of independent AI
@@ -35,7 +35,7 @@
       </p>
     </section>
 
-    <section class="desk">
+    <section class="desk" id="deskSection">
       <div class="ticket" id="ticket">
 
         <div class="ticket-head">
@@ -134,6 +134,9 @@
               </div>
               <p class="reason-text" id="reasonText"></p>
             </div>
+            <button type="button" class="copy-link-btn" id="copyLinkBtn">
+              <span id="copyLinkLabel">Copy shareable certificate link</span>
+            </button>
           </div>
 
           <div class="error-state" id="errorState" hidden>
@@ -148,6 +151,38 @@
         <p class="history-empty" id="historyEmpty">No appraisals yet this session.</p>
         <ul class="history-list" id="historyList"></ul>
       </aside>
+    </section>
+
+    <section class="certificate" id="certificateView" hidden>
+      <div class="cert-card">
+        <div class="cert-head">
+          <span>APPRAISAL CERTIFICATE</span>
+          <span class="cert-ticket-no" id="certTicketNo">TICKET #000</span>
+        </div>
+
+        <div class="cert-body">
+          <p class="cert-item-name" id="certItemName">—</p>
+          <p class="cert-meta" id="certMeta">—</p>
+
+          <div class="cert-stamp" id="certStampEl">
+            <span id="certStampText">FAIR PRICE</span>
+          </div>
+
+          <div class="cert-range">
+            <span class="range-label">Market range</span>
+            <span class="range-value" id="certRange">$0 – $0</span>
+          </div>
+
+          <p class="cert-reason" id="certReason"></p>
+        </div>
+
+        <div class="cert-footer">
+          <p>Verified on-chain via GenLayer Intelligent Contracts (Studionet). This certificate is independently queryable and cannot be altered.</p>
+          <p class="contract-address" id="certContractAddress"></p>
+        </div>
+      </div>
+
+      <a href="./" class="cert-new-link">Submit a new appraisal →</a>
     </section>
 
     <section class="how">
